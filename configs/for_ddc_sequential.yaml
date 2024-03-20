@@ -1,0 +1,44 @@
+experiment:
+  enable_pretrain: False
+
+  loss:
+    weights:
+      ddc1: 1.0e-0 #2.0e-2
+      ddc2: 5.0e-2
+      reconst: 1.0e-0
+  cluster_optimizer: 
+    name: "Adam" #"AdamW" #
+    lr: 1.0e-3 # 1.0e-5
+    betas: [0.9, 0.999]
+    weight_decay: 0.0
+  
+  cluster_scheduler: 
+    name: "ExponentialLR" #"MultiStepLR" # "StepLR" #
+    gamma: 0.99
+  data:  
+    batch_size: 100
+    evaluate_batch_size: 100
+  
+data:
+  name: "ECG200"
+  root_dir: "G:/Data/UCI-Cluster" 
+  pre_padding: True #False #
+  padding_type: "zeros" # "crop" #
+  padding_value: 0
+
+model:
+  name: "DDC"
+  encode_only: True
+
+  autoencoder:
+    network: 'GRU' #'RNN' # 'LSTM' #
+    hidden_dims: [32]
+    use_batchnorm: False
+    use_maxpool: False
+    
+    batch_first: True
+    latent_dim: 16
+    num_layers: 2
+    dropout: 0.2
+    bidirectional: True # False #
+    

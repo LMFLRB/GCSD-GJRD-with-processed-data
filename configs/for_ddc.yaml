@@ -1,0 +1,32 @@
+experiment:
+  # enable_pretrain: False
+
+  cluster_optimizer: 
+    name: "Adam" #"AdamW" #
+    lr: 1.0e-3 # 1.0e-5
+    betas: [0.9, 0.999]
+    weight_decay: 0.0
+  
+  cluster_scheduler: 
+    name: "ExponentialLR" #"MultiStepLR" # "StepLR" #
+    gamma: 0.99
+    
+  loss:
+    name: "DDC"
+    weights:
+      ddc1: 1.0e-0 #2.0e-2
+      ddc2: 5.0e-2
+      # ddc3: 5.0e-2
+      reconst: 1.0e-0
+
+model:
+  name: "DDC"
+  encode_only: False
+
+  autoencoder:
+    network: "CNN" #"MLP" #  
+    # input_dim: 1
+    hidden_dims: [32,64]
+    latent_dim: 100
+    latent_activation: "Tanh"
+    

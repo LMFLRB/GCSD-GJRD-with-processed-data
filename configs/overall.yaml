@@ -1,0 +1,97 @@
+experiment:
+  log_dir: "runs"
+  log_text_path: "textlog"
+  log_step: False
+  save_results: False
+  n_montecarlo: 300
+  n_finetune: 10
+  enable_pretrain: True
+  pretrain_epochs: 200
+  finetune_epochs: 500
+  cluster_epochs: 200
+  corruption: 0.2
+  update_freq: 20
+  cuda: True
+  enable_earlystop: True
+  delta_earlystop: 5.0e-3
+  patience: 10
+  cluster_only: False
+  open_tensorboard: True
+  use_resnet: True
+  use_processed_data: True
+  resnet_type: "resnet18"
+  feature_type: "linear" #"conv2d" #
+  eval_only: False
+  silent: False
+  start_tensorbord: False
+
+  max_version: 10
+
+  optimizer:
+    name: "SGD"
+    lr: 0.1
+    momentum: 0.9
+  scheduler:
+    name: "ExponentialLR" #"MultiStepLR" # "StepLR" #
+    gamma: 0.99
+  cluster_optimizer: {}  
+  cluster_scheduler: {}
+  
+  data:  
+    batch_size: 256
+    evaluate_batch_size: 256
+    num_workers: 0
+    drop_last: False
+    
+  loss:
+    name: "GCSD"
+    kernelsize: 5.0
+    kernelsize_adapt: True #False #
+    kernelsize_search_params: 
+      func: 'meadian' #'max' # 
+      param: 0.15 # 10 # 
+    
+    generative: False
+
+    entropy_order: 2
+    
+    weights:
+      ddc1: 1.0e-3 #2.0e-2
+      ddc2: 1.0e-4
+      ddc3: 1.0e-4
+      reconst: 1.0e-0
+
+  metric: 
+    name: "cluster"
+    keys: ["acc", "nmi", "ari"]
+  
+data:
+  root_dir: "G:/Data" #"E:/Shared/Data" #
+  cuda: False
+  name: "MNIST" #"FashionMNIST" #"STL10" #
+  
+
+model:
+  name: "DDC"
+  encode_only: False
+  n_cluster: 10
+  alpha: 1.0
+
+  autoencoder:
+    network: "CNN" #"MLP" #  
+    patch_size: [28,28]
+    hidden_dims: [32,64]
+    input_dim: 1
+    latent_dim: 200
+    activation: "ReLU"
+    final_activation: "Tanh"
+    weight_init: False
+    kernel_size: 5
+    stride: 2
+    padding: 1
+    dilation: 1
+    use_maxpool: True
+    use_batchnorm: True
+
+
+  

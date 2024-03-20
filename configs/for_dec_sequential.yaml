@@ -1,0 +1,49 @@
+experiment:
+  enable_pretrain: True
+  pretrain_epochs: 300
+  finetune_epochs: 500
+
+  cluster_optimizer:
+    name: "SGD"
+    lr: 0.005
+    momentum: 0.9
+  
+  cluster_scheduler:
+    name: "StepLR"
+    step_size: 100
+    gamma: 0.1
+
+  loss:
+    name: "DEC"
+    weights:
+      dec: 1.0e-0
+      reconst: 1.0e-0
+      # regular: 1.0e-4
+  
+data:
+  name: "ECG200"
+  root_dir: "G:/Data/UCI-Cluster" 
+  pre_padding: True #False #
+  padding_type: "zeros" # "crop" #
+  padding_value: 0
+  batch_size: 100
+  evaluate_batch_size:  100
+
+model:
+  name: "DEC"
+  cluster_only: False
+  encode_only: False
+
+  autoencoder:
+    network: 'GRU' #'RNN' # 'LSTM' #
+    hidden_dims: [32]
+    use_batchnorm: False
+    use_maxpool: False
+    
+    batch_first: True
+    latent_dim: 16
+    hidden_size: 32
+    num_layers: 2
+    dropout: 0.2
+    bidirectional: True # False #
+    
