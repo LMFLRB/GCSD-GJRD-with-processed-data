@@ -166,18 +166,18 @@ def ablation(data, loss, config:dict={}, seed:Union[dict, list]=None,
         f.write('done')
     experiment.log_text(f"{fit_mode} experiment done with total {len(combinations)} runs!")
 
-parser = argparse.ArgumentParser(description="data pre-process")
-parser.add_argument('--dataset', nargs='+', type=str, default="MNIST", #, "STL10"
-                    help='dataset for experiment')
-parser.add_argument('--loss', type=str, default="GJRD", help='loss name')
-parser.add_argument('--log_dir', type=str, default="G:/Logs", help='directory to log results')
-parser.add_argument('--resnet_type', type=str, default="resnet50", help='directory to log results')
-parser.add_argument('--feature_type', type=str, default="linear", help='directory to log results')
-parser.add_argument('--use_processed_data', type=bool, default=True, help='framework choices')
-parser.add_argument('--encode_only', type=bool, default=False, help='framework choices')
-parser.add_argument('--select_version', type=int, default=0, help='framework choices')
-args = parser.parse_args()    
 if __name__ == "__main__":    
+    parser = argparse.ArgumentParser(description="data pre-process")
+    parser.add_argument('--dataset', nargs='+', type=str, default="MNIST", #, "STL10"
+                        help='dataset for experiment')
+    parser.add_argument('--loss', type=str, default="GJRD", help='loss name')
+    parser.add_argument('--log_dir', type=str, default="G:/Logs", help='directory to log results')
+    parser.add_argument('--resnet_type', type=str, default="resnet50", help='directory to log results')
+    parser.add_argument('--feature_type', type=str, default="linear", help='directory to log results')
+    parser.add_argument('--use_processed_data', type=bool, default=True, help='framework choices')
+    parser.add_argument('--encode_only', type=bool, default=False, help='framework choices')
+    parser.add_argument('--select_version', type=int, default=0, help='framework choices')
+    args = parser.parse_args()    
     with open(f'configs/basic_configuration.yaml', 'r') as file:
         config = transform_to_edict(yaml.safe_load(file)) 
         
