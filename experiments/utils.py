@@ -79,13 +79,13 @@ def easydict_to_dict(ed_obj):
 
 def make_dict_consistent(dest_dict, source_dict, mode="replace"):
     for key, value in source_dict.items():
-        if isinstance(value, dict):
-            make_dict_consistent(dest_dict[key], value)
+        if isinstance(value, dict) and key in dest_dict:
+            make_dict_consistent(dest_dict[key], value, mode=mode)
         else:
-            if mode=="add":
+            if mode=="add" and not (key in dest_dict and type(dest_dict[key]) != type(value)):
                 dest_dict[key]=value
             else:#"replace"
-                if hasattr(dest_dict, key):
+                if key in dest_dict and type(dest_dict[key]) == type(value):
                     dest_dict[key]=value
                 else:
                     pass
@@ -382,24 +382,21 @@ def update_callback(writer: SummaryWriter, iteration: int, update_dict: dict):
                         scalar_value=value, 
                         global_step=iteration, 
                         display_name=key)
-    # writer.add_scalars(main_tag=f"{paths[-2]}-{paths[-1]}", 
-    #                    tag_scalar_dict=expand_dict(update_dict), 
-    #                    global_step=iteration)
 
-def make_model_data_consistent(data, model_params):
-    # patch_size=data[0][0].shape    
-    patch_size=data.feature_shape    
+def make_model_data_consistent(data, cluster_params):
+    model_params = cluster_params.autoencoder
     if data.is_image:
+        patch_size=data.feature_shape    
         model_params["patch_size"] = patch_size[-2:]
         if model_params["network"] == "MLP":
             model_params["input_dim"] = np.array(patch_size).prod()
         elif model_params["network"] == "CNN":
             model_params["input_dim"] = patch_size[0]
     else:
-        model_params["input_dim"] = patch_size[-1]
+        model_params["input_dim"] = data.feature_dim
         if not model_params["network"] in ["CNN", "MLP"]: 
             model_params["latent_dim"]= model_params["hidden_size"]
-    model_params["n_cluster"] = data.n_cluster
+    cluster_params.n_cluster=model_params["n_cluster"] = data.n_cluster
     # if not model_params['encode_only']: #nn.MaxUnpool() is not correctly used now in sdae model
     #     model_params['autoencoder']['use_maxpool']=False
 
@@ -793,7 +790,7 @@ def save_clustered_image(images, truelabels, predicts, logdir:str="", max_index:
         ## save samples for sorted clusters of the current batch as a iamge-matrix
         vutils.save_image(image_matrix, os.path.join(logdir, f"clustered_batch_{index}.png"), normalize=True, nrow=max_cluster)
     
-def earlystop(check_value, patience:int=10, eps:float=1.e-3, small_good:bool=True):
+def earlystop(check_value, patience:int=10, eps:float=1.e-3, small_good:bool=False):
     if not hasattr(earlystop, "count") or ( 
         hasattr(earlystop, "errors") and len(earlystop.errors)!=patience+1):
         earlystop.count = 0
@@ -806,7 +803,7 @@ def earlystop(check_value, patience:int=10, eps:float=1.e-3, small_good:bool=Tru
     earlystop.errors[0] =(torch.tensor(check_value.item())-earlystop.check_value)
 
     earlystop.varying_slow=(earlystop.errors.abs()<eps*earlystop.check_value.abs()).all().item()
-    earlystop.no_improving=(earlystop.errors<=0).all().item()
+    earlystop.no_improving=(earlystop.errors>=0).all().item() if small_good else (earlystop.errors<=0).all().item()
     flag = (earlystop.no_improving or earlystop.varying_slow) if earlystop.count>patience else False
     earlystop.check_value=torch.tensor(check_value.item())
     return flag

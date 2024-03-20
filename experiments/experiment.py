@@ -207,7 +207,7 @@ class Experiment():
         # torch.save(model.state_dict(), os.path.join(compare_logdir, f"{self.cur_procedure}-{self.log_version}-integeral_init.ckpt"))
         for epoch in range(self.enumerate_epochs): 
             if self.enable_earlystop:
-                earlystopped=earlystop(torch.tensor(val_loss), self.patience, self.delta_earlystop)                
+                earlystopped=earlystop(torch.tensor(val_loss), self.patience, self.delta_earlystop, True)                
             self.epoch = epoch
             data_iterator = self.train_iter(train_dataloader,
                                             postfix=OrderedDict(version=f"{self.log_version+1}/{self.enumerate_versions}",

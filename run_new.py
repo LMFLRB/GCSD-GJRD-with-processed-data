@@ -26,34 +26,12 @@ from experiments import (Experiment,
 
 cur_dir = os.path.dirname(__file__)
 
-parser = argparse.ArgumentParser(description="data pre-process")
-parser.add_argument('--dataset', nargs='+', type=str, default="MNIST", #, "STL10"
-                    help='dataset for experiment')
-parser.add_argument('--loss', type=str, default="GJRD", help='loss name')
-parser.add_argument('--entropy_order', type=int, default=2, help='entropy order for GJRD')
-parser.add_argument('--loss_weigths', type=dict, 
-                    default=dict(ddc1=1.0,ddc2=0.05,ddc3=0.05,reconst=1.0), 
-                    help='entropy order for GJRD')
-parser.add_argument('--model', type=str, default="DDC_resnet", help='model name')
-parser.add_argument('--hidden_dims', type=int, default=[500,500,1000], help='model name')
-
-parser.add_argument('--data_path', type=str, default="G:/Data", help='directory to load data')
-parser.add_argument('--batch_size', type=int, default=256, help='batch_size')
-parser.add_argument('--evaluate_batch_size', type=int, default=256, help='evaluate_batch_size')
-parser.add_argument('--log_dir', type=str, default="G:/Logs", help='directory to log results')
-parser.add_argument('--resnet_type', type=str, default="resnet50", help='directory to log results')
-parser.add_argument('--feature_type', type=str, default="linear", help='directory to log results')
-parser.add_argument('--use_processed_data', type=bool, default=True, help='framework choices')
-parser.add_argument('--encode_only', type=bool, default=False, help='framework choices')
-
-args = parser.parse_args()
      
-def pre_train_ae(data, config:dict={}, tensorbord=None):
+def pre_train_ae(data, model, config:dict={}):
     if not config.experiment.enable_pretrain or config.model.encode_only:
         return 
     else:
         exp_params  = config.experiment
-        model_params= config.model 
         data_params = config.data 
         ds_train, ds_val = data   
 
@@ -67,18 +45,12 @@ def pre_train_ae(data, config:dict={}, tensorbord=None):
             experiment = Experiment(exp_params)
             experiment.log_text([f"configurations loaded for {config.loss} from {config.file}",
                                 f"configurating experiment for stackVAE on {data_params.name}...",])  
-            make_model_data_consistent(ds_train, model_params.autoencoder)         
-            model = Models[model_params.name](**model_params)
-            autoencoder = model.encoder
             if exp_params.cuda:
-                autoencoder.cuda()
-            if not tensorbord.started.is_set() and config.experiment.start_tensorbord:
-                tensorbord.start()
-                experiment.log_text([f"tensor_board is opened @port={tensorbord.port},id={tensorbord.pid}"])
+                model.cuda()            
             experiment.log_text([f"Autoencoder substacked pretraining stage."])
-            experiment.pretrain_dae(autoencoder,ds_train,ds_val,log_dir_dae)
+            experiment.pretrain_dae(model,ds_train,ds_val,log_dir_dae)
             experiment.log_text("Autoencoder training stage.")
-            experiment.train_autoencoder(autoencoder,ds_train,ds_val,log_dir=log_dir_sdae)
+            experiment.train_autoencoder(model,ds_train,ds_val,log_dir=log_dir_sdae)
         
         return ckpt_path_sdae
 
@@ -103,16 +75,6 @@ def fit_with_seeds(data, config:dict={}, Seeds:Union[dict, list]=None, fit_mode:
         model_params= config.model 
         data_params = config.data 
         
-        try:
-            if config.experiment.start_tensorbord:
-                tensorbord = myTensorboard(os.path.join(cur_dir, config.experiment.log_dir), 5)
-                # 等待3秒钟 网页端口链接成功
-                time.sleep(3)    
-        except:
-            tensorbord = None
-            pass   
-    
-
         finetune_done=os.path.exists(os.path.join(exp_params.log_dir, "finetune-done"))
         exp_params.eval_only = (fit_mode=="eval_only") and finetune_done 
         if fit_mode=="montecarlo":
@@ -129,7 +91,8 @@ def fit_with_seeds(data, config:dict={}, Seeds:Union[dict, list]=None, fit_mode:
         exp_params.log_text_path = f"{fit_mode}_textlog"
         
         ds_train, ds_val = data
-        make_model_data_consistent(ds_train, model_params.autoencoder)
+        make_model_data_consistent(ds_train, model_params)
+        
         
         root_dir = exp_params.log_dir
 
@@ -139,6 +102,17 @@ def fit_with_seeds(data, config:dict={}, Seeds:Union[dict, list]=None, fit_mode:
         cluster_dir = f"{root_dir}/{fit_mode}_cluster" 
         if os.path.exists(cluster_dir):
             remove_path(cluster_dir)
+
+        try:
+            if config.experiment.start_tensorbord:
+                tensorbord = myTensorboard(root_dir, 5)
+                # 等待3秒钟 网页端口链接成功
+                time.sleep(3)    
+            else:
+                tensorbord = None
+        except:
+            pass   
+    
 
         exp_params.max_version = len(Seeds)
         for version, seed in enumerate(Seeds):
@@ -160,7 +134,7 @@ def fit_with_seeds(data, config:dict={}, Seeds:Union[dict, list]=None, fit_mode:
             
             experiment.log_text(f"configurating model...")          
             if exp_params.enable_pretrain and not model_params.encode_only:                
-                ckpt_path_sdae = pre_train_ae(data, config, tensorbord)
+                ckpt_path_sdae = pre_train_ae(data, model.encoder, config)
                 model.encoder.load_state_dict(torch.load(ckpt_path_sdae))                    
             if exp_params["cuda"]:
                 model.cuda()
@@ -196,37 +170,58 @@ def fit_with_seeds(data, config:dict={}, Seeds:Union[dict, list]=None, fit_mode:
         with open(os.path.join(f"{root_dir}", f'{fit_mode}-done'), 'w') as f:
             f.write('done')
         
-if __name__ == "__main__":    
-    
-    with open(f'configs/basic_configuration.yaml', 'r') as file:
+if __name__ == "__main__":      
+    parser = argparse.ArgumentParser(description="data pre-process")
+    parser.add_argument('--dataset', nargs='+', type=str, default="REUTERS10K", #"MNIST", #, "STL10", #
+                        help='dataset for experiment')
+    parser.add_argument('--loss', type=str, default="GJRD", help='loss name')
+    parser.add_argument('--entropy_order', type=int, default=2, help='entropy order for GJRD')
+    parser.add_argument('--loss_weigths', type=dict, 
+                        default=dict(ddc1=1.0,ddc2=0.05,ddc3=0.05,reconst=1.0), 
+                        help='entropy order for GJRD')
+    parser.add_argument('--model', type=str, default="DDC", help='model name')
+    parser.add_argument('--hidden_dims', type=int, default=[500,500,1000], help='model name')
+    parser.add_argument('--data_path', type=str, default="G:/Data", help='directory to load data')
+    parser.add_argument('--batch_size', type=int, default=256, help='batch_size')
+    parser.add_argument('--evaluate_batch_size', type=int, default=256, help='evaluate_batch_size')
+    parser.add_argument('--root_dir', type=str, default="G:/Logs", help='directory to log results')
+    parser.add_argument('--resnet_type', type=str, default="resnet50", help='directory to log results')
+    parser.add_argument('--feature_type', type=str, default="linear", help='directory to log results')
+    parser.add_argument('--use_processed_data', type=bool, default=True, help='framework choices')
+    parser.add_argument('--encode_only', type=bool, default=False, help='framework choices')
+    parser.add_argument('--file', type=str, default="configs/basic_configuration.yaml", help='directory to log configuration')
+    args = parser.parse_args()
+
+    with open(args.file, 'r') as file:
         config = transform_to_edict(yaml.safe_load(file)) 
-     
-    config.data.cuda = config.experiment.cuda = torch.cuda.is_available()#  
     make_dict_consistent(config.data, transform_to_edict(args.__dict__))
     make_dict_consistent(config.model, transform_to_edict(args.__dict__))
     make_dict_consistent(config.experiment, transform_to_edict(args.__dict__))
+    config.file = args.file
+    config.data.cuda = config.experiment.cuda = torch.cuda.is_available()#  
     config.experiment.data.batch_size=args.batch_size
     config.experiment.data.evaluate_batch_size=args.evaluate_batch_size   
     config.experiment.loss.weights.update(args.loss_weigths)
     config.model.autoencoder.hidden_dims=args.hidden_dims
+    config.model.name=args.model   
+    config.experiment.loss.name = args.loss
     config.data.name = args.dataset
-    config.data.root_dir = args.data_path
+    config.data.root_dir = args.data_path  
+    if args.loss.upper()=="GJRD":
+        args.loss = args.loss+f"-{args.entropy_order}"
+        config.experiment.loss.entropy_order=args.entropy_order 
+    config.loss = args.loss   
+    config.model.framework = config.framework = framework = "FC" if args.encode_only else "AE"
+    config.model.network = config.network = network = "MLP" if args.feature_type=="linear" else "CNN"
     
+    root_dir = os.path.join(args.root_dir, config.experiment.log_dir)  
+    if args.dataset.lower()in ["reuters10k"]:
+        paths=[root_dir,args.dataset,args.loss] 
+    else:
+        paths=[root_dir,args.dataset,f"{args.resnet_type}-{args.feature_type}",f"{args.model}-{network}-{framework}",args.loss] 
+    config.experiment.log_dir = os.path.join(*paths)     
     data = LoadDataset(config.data)  #dataset
 
-    config.loss = args.loss 
-    if args.loss.upper()=="GJRD":
-        args.loss += f"-{args.entropy_order}"
-        config.experiment.loss.entropy_order=args.entropy_order
-    
-    config.framework = framework = "FC" if args.encode_only else "AE"
-    config.network = network = "MLP" if args.feature_type=="linear" else "CNN"
-    root_dir = os.path.join(args.log_dir, config.experiment.log_dir)  
-    config.experiment.log_dir = os.path.join(root_dir,
-                    args.dataset,
-                    f"{args.resnet_type}-{args.feature_type}",
-                    f"{args.model}-{network}-{framework}",
-                    args.loss)     
     if not os.path.exists(os.path.join(config.experiment.log_dir, 'montecarlo-done')):
         montecarlo_seeds=torch.randperm(100000).tolist()[:config.experiment.n_montecarlo] 
         fit_with_seeds(data, config, montecarlo_seeds, fit_mode="montecarlo")

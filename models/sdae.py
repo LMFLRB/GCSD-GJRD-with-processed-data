@@ -285,7 +285,7 @@ class StackedDenoisingAutoEncoder(nn.Module):
         return self.decoder(embeddings)
     
     def make_unmaxpool_consistent(self):
-        if self.use_maxpool:
+        if self.use_maxpool and self.network=="CNN":
             l=len(self.encoder)-1
             for num in range(l):
                 setattr(self.decoder[l-num].max_unpool, "indices", self.encoder[num].max_pool.indices)
