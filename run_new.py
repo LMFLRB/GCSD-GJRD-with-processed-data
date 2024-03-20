@@ -3,6 +3,7 @@ import torch
 import os
 import yaml
 import time
+import argparse
 from easydict import EasyDict as Edict
 from typing import Union
 
@@ -24,8 +25,30 @@ from experiments import (Experiment,
                         )
 
 cur_dir = os.path.dirname(__file__)
+
+parser = argparse.ArgumentParser(description="data pre-process")
+parser.add_argument('--dataset', nargs='+', type=str, default="MNIST", #, "STL10"
+                    help='dataset for experiment')
+parser.add_argument('--loss', type=str, default="GJRD", help='loss name')
+parser.add_argument('--entropy_order', type=int, default=2, help='entropy order for GJRD')
+parser.add_argument('--loss_weigths', type=dict, 
+                    default=dict(ddc1=1.0,ddc2=0.05,ddc3=0.05,reconst=1.0), 
+                    help='entropy order for GJRD')
+parser.add_argument('--model', type=str, default="DDC_resnet", help='model name')
+parser.add_argument('--hidden_dims', type=int, default=[500,500,1000], help='model name')
+
+parser.add_argument('--data_path', type=str, default="G:/Data", help='directory to load data')
+parser.add_argument('--batch_size', type=int, default=256, help='batch_size')
+parser.add_argument('--evaluate_batch_size', type=int, default=256, help='evaluate_batch_size')
+parser.add_argument('--log_dir', type=str, default="G:/Logs", help='directory to log results')
+parser.add_argument('--resnet_type', type=str, default="resnet50", help='directory to log results')
+parser.add_argument('--feature_type', type=str, default="linear", help='directory to log results')
+parser.add_argument('--use_processed_data', type=bool, default=True, help='framework choices')
+parser.add_argument('--encode_only', type=bool, default=False, help='framework choices')
+
+args = parser.parse_args()
      
-def pre_train_ae(data, loss, config:dict={}, tensorbord=None):
+def pre_train_ae(data, config:dict={}, tensorbord=None):
     if not config.experiment.enable_pretrain or config.model.encode_only:
         return 
     else:
@@ -42,7 +65,7 @@ def pre_train_ae(data, loss, config:dict={}, tensorbord=None):
             os.makedirs(f"{log_dir_sdae}", exist_ok=True)
             exp_params.log_text_path = f"ae_pre_textlog"
             experiment = Experiment(exp_params)
-            experiment.log_text([f"configurations loaded for {loss} from {config.file}",
+            experiment.log_text([f"configurations loaded for {config.loss} from {config.file}",
                                 f"configurating experiment for stackVAE on {data_params.name}...",])  
             make_model_data_consistent(ds_train, model_params.autoencoder)         
             model = Models[model_params.name](**model_params)
@@ -72,13 +95,23 @@ def find_best_seeds(config, tag_sel:str="ACC", log_dir: str="", results_file:str
         pass
     return Seeds_sel
 
-def fit_with_seeds(data, loss, config:dict={}, Seeds:Union[dict, list]=None, tensorbord=None, fit_mode:str="montecarlo"):   
+def fit_with_seeds(data, config:dict={}, Seeds:Union[dict, list]=None, fit_mode:str="montecarlo"):   
     if os.path.exists(os.path.join(config.experiment.log_dir, f'{fit_mode}-done')):
         print(f"{fit_mode} runs have been done before")
     else:
         exp_params  = config.experiment
         model_params= config.model 
         data_params = config.data 
+        
+        try:
+            if config.experiment.start_tensorbord:
+                tensorbord = myTensorboard(os.path.join(cur_dir, config.experiment.log_dir), 5)
+                # 等待3秒钟 网页端口链接成功
+                time.sleep(3)    
+        except:
+            tensorbord = None
+            pass   
+    
 
         finetune_done=os.path.exists(os.path.join(exp_params.log_dir, "finetune-done"))
         exp_params.eval_only = (fit_mode=="eval_only") and finetune_done 
@@ -107,9 +140,8 @@ def fit_with_seeds(data, loss, config:dict={}, Seeds:Union[dict, list]=None, ten
         if os.path.exists(cluster_dir):
             remove_path(cluster_dir)
 
-        seeds=Seeds[loss] if isinstance(Seeds, dict) else Seeds
-        exp_params.max_version = len(seeds)
-        for version, seed in enumerate(seeds):
+        exp_params.max_version = len(Seeds)
+        for version, seed in enumerate(Seeds):
             # make the model repruducible
             manual_seed_all(seed)                
 
@@ -121,25 +153,25 @@ def fit_with_seeds(data, loss, config:dict={}, Seeds:Union[dict, list]=None, ten
             
             experiment = Experiment(exp_params)
             experiment.log_text([f"using seed={seed}",
-                                f"configurations loaded for {loss} from {config.file}",
+                                f"configurations loaded for {config.loss} from {config.file}",
                                 f"configurating experiment for {data_params.name} with {model_params.name}-{model_params.autoencoder.network}-{'FC' if model_params.encode_only else 'AE'}...",])
         
             model = Models[model_params.name](**model_params)
             
             experiment.log_text(f"configurating model...")          
             if exp_params.enable_pretrain and not model_params.encode_only:                
-                ckpt_path_sdae = pre_train_ae(data, loss, config, tensorbord)
+                ckpt_path_sdae = pre_train_ae(data, config, tensorbord)
                 model.encoder.load_state_dict(torch.load(ckpt_path_sdae))                    
             if exp_params["cuda"]:
                 model.cuda()
             
-            if not tensorbord.started.is_set() and config.experiment.start_tensorbord:
+            if config.experiment.start_tensorbord and not tensorbord.started.is_set():
                 tensorbord.start()
-                experiment.log_text([f"tensor_board is opened @port={tb.port},id={tb.pid}"])
+                experiment.log_text([f"tensor_board is opened @port={tensorbord.port},id={tensorbord.pid}"])
             df_dict=dict(seed=int(seed))
             
             if fit_mode in ["montecarlo", "finetune"] or not exp_params.eval_only:
-                experiment.log_text(f"{model.name} clustering with {loss} on {data_params.name} {fit_mode} training stage.")
+                experiment.log_text(f"{model.name} clustering with {config.loss} on {data_params.name} {fit_mode} training stage.")
                 experiment.train_cluster(model, ds_train, ds_val, log_dir_cluster)
             ckpt_path = f"{eval_dir}/version_{version}" if exp_params.eval_only else log_dir_cluster 
             # for mode in ["last","acc"]:
@@ -165,67 +197,46 @@ def fit_with_seeds(data, loss, config:dict={}, Seeds:Union[dict, list]=None, ten
             f.write('done')
         
 if __name__ == "__main__":    
-    with open(f'configs/overall.yaml', 'r') as file:
-        config = transform_to_edict(yaml.safe_load(file)) 
-    os.makedirs(config.experiment.log_dir, exist_ok=True)    
-    try:
-        # set tensorboard
-        tb = myTensorboard(os.path.join(cur_dir, config.experiment.log_dir), 5)
-    except:
-        tb = None
-        pass
-    # 等待3秒钟 网页端口链接成功
-    time.sleep(3)    
-    root_dir = copy(config.experiment.log_dir)
-    # seeds = {"GJRD": [4430], "GCSD": [7076], "DDC": [3856]}
-    # for dataset in ["MNIST"]:        #"MNIST", "FashionMNIST", "STL10"
-    for dataset in ["STL10"]:   
-        config.data.cuda =  config.experiment.cuda = torch.cuda.is_available()#  
-        config.data.name = dataset
-        for resnet_type in ["resnet50"]:            
-            config.experiment.resnet_type=resnet_type
-            data = LoadDataset(config.data, 
-                            config.experiment.use_processed_data,
-                            config.experiment.feature_type,
-                            config.experiment.resnet_type
-                            )  #dataset  
-            # for loss in ["GCSD", "GJRD-2", "GJRD-5", "GJRD-10", "DDC"]:#
-            for loss in ["GJRD-2"]:#, 
-                loss_temp = loss.split('-')
-                config.file=f"configs/for_{loss_temp[0].lower()}.yaml"        
-                with open(config.file, 'r') as file:
-                    make_dict_consistent(config, transform_to_edict(yaml.safe_load(file)))
-                ###########################################################################################
-                for encode_only in [False]:#
-                    #     enable autoencoder
-                    config.model.encode_only = encode_only
-                    framework="FC" if config.model.encode_only else "AE"
-                    if config.experiment.use_processed_data or config.experiment.use_resnet:
-                        config.model.name = 'DDC_resnet'                    
-                        config.model.use_processed_data=config.experiment.use_processed_data
-                        config.model.resnet_type=config.experiment.resnet_type
-                        config.model.feature_type=config.experiment.feature_type 
-                        config.model.autoencoder.network="MLP" if config.experiment.feature_type=="linear" else "CNN"
-                            
-                    if len(loss_temp)>1:
-                        config.experiment.loss.entropy_order = float(loss_temp[1])
-                    config.experiment.log_dir = os.path.join(root_dir,dataset,
-                                    f"{config.experiment.resnet_type}-{config.experiment.feature_type}",
-                                    f"{config.model.name}-{config.model.autoencoder.network}-{framework}",
-                                    loss)   
-                    if not os.path.exists(os.path.join(config.experiment.log_dir, 'montecarlo-done')):
-                        montecarlo_seeds=torch.randperm(100000).tolist()[:config.experiment.n_montecarlo] 
-                        fit_with_seeds(data, loss, config, montecarlo_seeds, tensorbord=tb, fit_mode="montecarlo")
-                    else:
-                        print("montecarlo-done before")
-                    if not os.path.exists(os.path.join(config.experiment.log_dir, 'finetue-done')):
-                        finetune_seeds = find_best_seeds(config, finetune_top_k=config.experiment.n_finetune) 
-                        fit_with_seeds(data, loss, config, finetune_seeds, tensorbord=tb, fit_mode="finetune")
-                    else:
-                        print("finetue-done before")
-                    
-                    # fit_with_seeds(data, loss, config, [7782,2854], tensorbord=tb, fit_mode="finetune")
-                    # 等待TensorBoard进程结束
-            
-        del data
     
+    with open(f'configs/basic_configuration.yaml', 'r') as file:
+        config = transform_to_edict(yaml.safe_load(file)) 
+     
+    config.data.cuda = config.experiment.cuda = torch.cuda.is_available()#  
+    make_dict_consistent(config.data, transform_to_edict(args.__dict__))
+    make_dict_consistent(config.model, transform_to_edict(args.__dict__))
+    make_dict_consistent(config.experiment, transform_to_edict(args.__dict__))
+    config.experiment.data.batch_size=args.batch_size
+    config.experiment.data.evaluate_batch_size=args.evaluate_batch_size   
+    config.experiment.loss.weights.update(args.loss_weigths)
+    config.model.autoencoder.hidden_dims=args.hidden_dims
+    config.data.name = args.dataset
+    config.data.root_dir = args.data_path
+    
+    data = LoadDataset(config.data)  #dataset
+
+    config.loss = args.loss 
+    if args.loss.upper()=="GJRD":
+        args.loss += f"-{args.entropy_order}"
+        config.experiment.loss.entropy_order=args.entropy_order
+    
+    config.framework = framework = "FC" if args.encode_only else "AE"
+    config.network = network = "MLP" if args.feature_type=="linear" else "CNN"
+    root_dir = os.path.join(args.log_dir, config.experiment.log_dir)  
+    config.experiment.log_dir = os.path.join(root_dir,
+                    args.dataset,
+                    f"{args.resnet_type}-{args.feature_type}",
+                    f"{args.model}-{network}-{framework}",
+                    args.loss)     
+    if not os.path.exists(os.path.join(config.experiment.log_dir, 'montecarlo-done')):
+        montecarlo_seeds=torch.randperm(100000).tolist()[:config.experiment.n_montecarlo] 
+        fit_with_seeds(data, config, montecarlo_seeds, fit_mode="montecarlo")
+    else:
+        print("montecarlo-done before")
+    if not os.path.exists(os.path.join(config.experiment.log_dir, 'finetue-done')):
+        finetune_seeds = find_best_seeds(config, finetune_top_k=config.experiment.n_finetune) 
+        fit_with_seeds(data, config, finetune_seeds, fit_mode="finetune")
+    else:
+        print("finetue-done before")
+    
+    # fit_with_seeds(data, loss, config, [7782,2854], tensorbord=tb, fit_mode="finetune")
+    # 等待TensorBoard进程结束

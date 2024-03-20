@@ -7,6 +7,7 @@ from easydict import EasyDict as Edict
 from typing import Union
 from itertools import product
 
+import argparse
 from scipy.io import savemat, loadmat
 import pandas as pd
 from datasets import LoadDataset
@@ -26,17 +27,23 @@ from experiments import (Experiment,
                         )
 cur_dir = os.path.dirname(__file__)
 
-from run_dataset_loss import pre_train_ae, find_best_seeds
-
 def ablation(data, loss, config:dict={}, seed:Union[dict, list]=None, 
-             tensorbord=None, fit_mode:str="montecarlo", 
+             fit_mode:str="montecarlo", 
              restart:bool=False,
              random_seed:bool=False):    
     exp_params  = config.experiment
     model_params= config.model 
     data_params = config.data 
     
-    
+    try:
+        if config.experiment.start_tensorbord:
+            tensorbord = myTensorboard(os.path.join(cur_dir, config.experiment.log_dir), 5)
+            # 等待3秒钟 网页端口链接成功
+            time.sleep(3)    
+    except:
+        tensorbord = None
+        pass   
+        
     root_dir = copy(exp_params.log_dir)
 
     # init_ckpt=os.path.join(root_dir, "finetune_cluster", 
@@ -104,7 +111,7 @@ def ablation(data, loss, config:dict={}, seed:Union[dict, list]=None,
     experiment = Experiment(exp_params)    
     if not tensorbord.started.is_set() and config.experiment.start_tensorbord:
         tensorbord.start()
-        experiment.log_text([f"tensor_board is opened @port={tb.port},id={tb.pid}"])
+        experiment.log_text([f"tensor_board is opened @port={tensorbord.port},id={tensorbord.pid}"])
 
     for version in range(last_version,len(combinations)):
         # seed=torch.randint(0,10000000,[1,]).tolist()
@@ -158,46 +165,54 @@ def ablation(data, loss, config:dict={}, seed:Union[dict, list]=None,
     with open(is_done, 'w') as f:
         f.write('done')
     experiment.log_text(f"{fit_mode} experiment done with total {len(combinations)} runs!")
-    
+
+parser = argparse.ArgumentParser(description="data pre-process")
+parser.add_argument('--dataset', nargs='+', type=str, default="MNIST", #, "STL10"
+                    help='dataset for experiment')
+parser.add_argument('--loss', type=str, default="GJRD", help='loss name')
+parser.add_argument('--log_dir', type=str, default="G:/Logs", help='directory to log results')
+parser.add_argument('--resnet_type', type=str, default="resnet50", help='directory to log results')
+parser.add_argument('--feature_type', type=str, default="linear", help='directory to log results')
+parser.add_argument('--use_processed_data', type=bool, default=True, help='framework choices')
+parser.add_argument('--encode_only', type=bool, default=False, help='framework choices')
+parser.add_argument('--select_version', type=int, default=0, help='framework choices')
+args = parser.parse_args()    
 if __name__ == "__main__":    
-    with open(f'configs/overall.yaml', 'r') as file:
+    with open(f'configs/basic_configuration.yaml', 'r') as file:
         config = transform_to_edict(yaml.safe_load(file)) 
-    os.makedirs(config.experiment.log_dir, exist_ok=True)    
-    try:
-        # set tensorboard
-        tb = myTensorboard(os.path.join(cur_dir, config.experiment.log_dir), 5)
-    except:
-        tb = None
-        pass
-    # 等待3秒钟 网页端口链接成功
-    time.sleep(3)    
-    # root_dir = copy(config.experiment.log_dir)
-    # seeds = {"GJRD": [4430], "GCSD": [7076], "DDC": [3856]}
-    root_dir = "runs"
-    loss = "GJRD"
-    framework="AE"
-    dataset = "STL10"  #"MNIST", "FashionMNIST", "STL10"
-    config.file=f"configs/for_gjrd.yaml"
-    config.experiment.resnet_type="resnet50"   
-    # dataset  
-    config.data.name = dataset 
-    config.data.cuda =  config.experiment.cuda = torch.cuda.is_available()#  
-    data = LoadDataset(config.data, 
-                    config.experiment.use_processed_data,
-                    config.experiment.feature_type,
-                    config.experiment.resnet_type
-                    )  #dataset  
+        
+    make_dict_consistent(config.model, transform_to_edict(args.__dict__))
+    make_dict_consistent(config.experiment, transform_to_edict(args.__dict__))
     
-    with open(config.file, 'r') as file:
-        make_dict_consistent(config, transform_to_edict(yaml.safe_load(file)))
-    # model
-    config.model.encode_only = False
+    config.select_version = args.select_version
+    config.model.encode_only = args.encode_only
+
+    dataset = args.dataset
+    loss = args.loss.upper()
+    root_dir = os.path.join(args.log_dir, config.experiment.log_dir)
+    framework= "Enc" if args.encode_only else "AE"
+    # dataset  
+    config.experiment.cuda = torch.cuda.is_available()#  
+    
     if config.experiment.use_processed_data or config.experiment.use_resnet:
         config.model.name = 'DDC_resnet'                    
         config.model.use_processed_data=config.experiment.use_processed_data
         config.model.resnet_type=config.experiment.resnet_type
         config.model.feature_type=config.experiment.feature_type 
         config.model.autoencoder.network="MLP" if config.experiment.feature_type=="linear" else "CNN"
+
+    config.data.update(dict(name=dataset,
+                            cuda=config.experiment.cuda,
+                            use_processed_data=config.experiment.use_processed_data,
+                            resnet_type=config.experiment.resnet_type,
+                            feature_type=config.experiment.feature_type 
+                            )
+    ) 
+    data = LoadDataset(config.data, 
+                    config.experiment.use_processed_data,
+                    config.experiment.feature_type,
+                    config.experiment.resnet_type
+                    )  #dataset  
     
     config.experiment.log_dir = os.path.join(root_dir,dataset,
                     f"{config.experiment.resnet_type}-{config.experiment.feature_type}",
@@ -206,11 +221,9 @@ if __name__ == "__main__":
     finetune_seeds = pd.read_csv(f"{config.experiment.log_dir}/finetune.csv").sort_values(by='acc_best', ascending=False)['seed'].values
     
     # run ablation
-    config.select_version = 0
     for fit_mode in ["params_sensitivity", "ablation_loss", "entorder_sensitivity"]:
         ablation(data, loss, config, 
                 finetune_seeds[config.select_version], 
-                tensorbord=tb, 
                 fit_mode=fit_mode,
                 restart=False,
                 random_seed=False

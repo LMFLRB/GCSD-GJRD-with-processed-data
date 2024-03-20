@@ -417,6 +417,42 @@ class DynTexture(MyTimeSeries):
                         n_sample=len(dataset),),                        
                         self.data_path+".mat") 
 
+
+class Reuters(Dataset):
+
+    def __init__(self, 
+                 name:str="reuters10k",
+                 root_dir:str="G:\Data",
+                 **kwargs):
+        data = np.load(os.path.join(root_dir, name.upper(), 'reutersidf10k.npy'), allow_pickle=True).item()
+        self.features = data['data']
+        self.labels   = data['label']
+        self.is_imgage = False
+        self.feature_dim = 2000
+        self.clusters=["corp-ind", "gov-soc", "markets", "economics"]
+        self.n_cluster=4
+
+    def __len__(self):
+        return self.x.shape[0]
+
+    def __getitem__(self, idx):
+        return (torch.from_numpy(np.array(self.features[idx])), 
+                torch.from_numpy(np.array(self.labels[idx])), 
+        )
+    
+    def split(self, perscentages=[]):
+        from torch.utils.data import random_split
+        data_size = self.__len__()
+        if len(perscentages)==0:
+            perscentages=[0.7,0.3]
+        splits_size = [int(percent*data_size) for percent in perscentages]
+        if sum(perscentages)<1:
+            splits_size.append(data_size-sum(splits_size))
+        else:
+            splits_size[-1] = data_size-sum(splits_size[:-1])
+
+        return tuple(random_split(self, splits_size))
+    
 class cache_dataset_into_cuda(Dataset):
     def __init__(self, dataset) -> None:
         super().__init__()
@@ -553,17 +589,13 @@ class procDataset(Dataset):
     def __len__(self) -> int:
         return len(self.dataset)
         
-def LoadDataset(params, with_processed_data=True, 
-                feature_type:str="linear", resnet_type:str=None):   
-    params['feature_type']=feature_type 
-    params['resnet_type']=resnet_type
-    if with_processed_data: 
-        if not os.path.exists(
-                    os.path.join(params.root_dir, 
-                                f'{params.name}-processed', 
-                                f'{resnet_type}-{feature_type}',
-                                f'done')
-                     ):    
+def LoadDataset(params):   
+    if params['with_processed_data']: 
+        is_done=os.path.join(params.root_dir, 
+                        f'{params.name}-processed', 
+                        f'{params['resnet_type']}-{params['feature_type']}',
+                        f'done')
+        if not os.path.exists(is_done):    
             from models import ImageProcess
             DataProcess = ImageProcess(**params)
             params_=copy(params)
@@ -571,9 +603,11 @@ def LoadDataset(params, with_processed_data=True,
             to_process = dict(train=tvsDataset(train=True,**params_), 
                               test=tvsDataset(train=False,**params_))
             DataProcess(to_process)
-
-        traindata = procDataset(train=True, **params)
-        testdata  = procDataset(train=False,**params)
+        if params["name"].lower()=="reuters10k":
+            traindata, testdata = Reuters(**params_).split()
+        else:
+            traindata = procDataset(train=True, **params)
+            testdata  = procDataset(train=False,**params)
     else:
         traindata = tvsDataset(train=True, **params)
         testdata  = tvsDataset(train=False,**params)

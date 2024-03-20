@@ -77,12 +77,18 @@ def easydict_to_dict(ed_obj):
             normal_dict[key] = easydict_to_dict(value)
     return normal_dict
 
-def make_dict_consistent(dest_dict, source_dict):
+def make_dict_consistent(dest_dict, source_dict, mode="replace"):
     for key, value in source_dict.items():
         if isinstance(value, dict):
             make_dict_consistent(dest_dict[key], value)
         else:
-            dest_dict[key]=value
+            if mode=="add":
+                dest_dict[key]=value
+            else:#"replace"
+                if hasattr(dest_dict, key):
+                    dest_dict[key]=value
+                else:
+                    pass
             
 def cat_listed_dict(in_list):
     def cat_dict_to_list(in_dict, out_dict, initial=True):    

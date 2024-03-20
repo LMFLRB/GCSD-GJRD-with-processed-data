@@ -22,7 +22,7 @@ cur_dir = os.path.dirname(__file__)
 from run_dataset_loss import find_best_seeds, fit_with_seeds
 
 if __name__ == "__main__":    
-    with open(f'configs/overall.yaml', 'r') as file:
+    with open(f'configs/basic_configuration.yaml', 'r') as file:
         config = transform_to_edict(yaml.safe_load(file)) 
     os.makedirs(config.experiment.log_dir, exist_ok=True)    
     try:
